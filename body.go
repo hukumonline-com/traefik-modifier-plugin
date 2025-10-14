@@ -1,4 +1,4 @@
-package modifier
+package traefik_modifier
 
 import (
 	"bytes"
@@ -27,15 +27,15 @@ func NewBodyModifier(templateRequest string, templateResponse map[int]string) *B
 }
 
 // ModifyRequestBodyWithContext handles request body modification using templates with context
-func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *TemplateContext) ([]byte, error) {
+func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *TemplateContext) ([]byte, []byte, error) {
 	if bm.templateRequest == "" || req.Body == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Read original body
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read request body: %w", err)
+		return nil, nil, fmt.Errorf("failed to read request body: %w", err)
 	}
 	req.Body.Close()
 
@@ -43,7 +43,7 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 	var requestData interface{}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &requestData); err != nil {
-			return nil, fmt.Errorf("failed to parse request JSON: %w", err)
+			return nil, nil, fmt.Errorf("failed to parse request JSON: %w", err)
 		}
 	}
 
@@ -53,7 +53,9 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 	var buf bytes.Buffer
 	templateData := map[string]interface{}{
 		"request": map[string]interface{}{
-			"body": requestData,
+			"api": map[string]interface{}{
+				"body": requestData,
+			},
 		},
 	}
 
@@ -63,7 +65,7 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 	}
 
 	if err := tmpl.Execute(&buf, templateData); err != nil {
-		return nil, fmt.Errorf("failed to execute request template: %w", err)
+		return nil, nil, fmt.Errorf("failed to execute request template: %w", err)
 	}
 
 	// Update request body
@@ -72,7 +74,7 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 	req.ContentLength = int64(len(newBody))
 	req.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
 
-	return body, nil
+	return body, newBody, nil
 }
 
 // ResponseWriter wraps http.ResponseWriter to capture response
@@ -108,12 +110,12 @@ func (rw *ResponseWriter) GetStatusCode() int {
 }
 
 // ModifyResponse handles response body modification
-func (bm *BodyModifier) ModifyResponse(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody []byte) error {
-	return bm.ModifyResponseWithContext(originalWriter, capturedResponse, originalRequestBody, nil)
+func (bm *BodyModifier) ModifyResponse(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody, modifiedRequestBody []byte) error {
+	return bm.ModifyResponseWithContext(originalWriter, capturedResponse, originalRequestBody, modifiedRequestBody, nil)
 }
 
 // ModifyResponseWithContext handles response body modification with context
-func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody []byte, ctx *TemplateContext) error {
+func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody, modifiedRequestBody []byte, ctx *TemplateContext) error {
 	if len(bm.templateResponse) == 0 {
 		// No response masking configured, write original response
 		originalWriter.WriteHeader(capturedResponse.statusCode)
@@ -131,9 +133,15 @@ func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWr
 	}
 
 	// Parse original request body
-	var requestData interface{}
+	var requestDataOriginal interface{}
+	var requestDataModified interface{}
+
 	if len(originalRequestBody) > 0 {
-		json.Unmarshal(originalRequestBody, &requestData)
+		json.Unmarshal(originalRequestBody, &requestDataOriginal)
+	}
+
+	if len(modifiedRequestBody) > 0 {
+		json.Unmarshal(modifiedRequestBody, &requestDataModified)
 	}
 
 	// Parse response body
@@ -152,7 +160,12 @@ func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWr
 	var buf bytes.Buffer
 	templateData := map[string]interface{}{
 		"request": map[string]interface{}{
-			"body": requestData,
+			"api": map[string]interface{}{
+				"body": requestDataOriginal,
+			},
+			"modified": map[string]interface{}{
+				"body": requestDataModified,
+			},
 		},
 		"response": map[string]interface{}{
 			"body": responseData,

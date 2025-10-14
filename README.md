@@ -1,9 +1,11 @@
 # Traefik Modifier Plugin
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   REQUEST API   │───▶│ MODIFIER REQUEST│───▶│     SERVICE     │───▶│MODIFIER RESPONSE│───▶│  RESPONSE API   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌────────────────────────┐    ┌──────────────┐    ┌───────────────────────┐    ┌──────────────────┐
+│   REQUEST API   │───▶│    MODIFIER REQUEST    │───▶│    SERVICE   │───▶│   MODIFIER RESPONSE   │───▶│  RESPONSE API    │
+│                 │    │    [[request.api]]     │    │  (YOUR APP)  │    │    [[request.api]]    │    │                  │
+│                 │    │                        │    │              │    │  [[request.modifier]] │    │                  │
+└─────────────────┘    └────────────────────────┘    └──────────────┘    └───────────────────────┘    └──────────────────┘
 
 ```
 
@@ -25,13 +27,16 @@ A powerful Traefik middleware plugin that allows you to modify HTTP requests and
 Add the plugin to your `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: '3.1'
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v3.1
     command:
-      - "--experimental.plugins.modifier.modulename=github.com/hukumonline-com/traefik-modifier"
-      - "--experimental.plugins.modifier.version=v1.0.0"
+      - --configFile=/etc/traefik/traefik.yaml
+    volumes:
+      - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
+      - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - .:/plugins-local/src/github.com/hukumonline-com/traefik-modifier:ro
     # ... other configuration
 ```
 
@@ -45,19 +50,19 @@ http:
     my-modifier:
       plugin:
         modifier:
-          Query:
-            transform:
+          ModifierQuery:
+            Transform:
               new_param: "[[ .request.query.old_param ]]_[[ .context.unixtime ]]"
-          Request: |
+          ModifierRequest: |
             {
-              "question": "[[ .request.body.ask ]]",
-              "timestamp": [[ .context.unixtime ]]
+              "question": "[[ .request.api.body.ask ]]",
+              "timestamp": "[[ .context.unixtime ]]"
             }
-          Response:
+          ModifierResponse:
             "200": |
               {
                 "id": [[ .response.body.id ]],
-                "data": "[[ .request.body.question ]]",
+                "data": "[[ .request.api.body.question ]]",
                 "timestamp": [[ .context.unixtime ]]
               }
 ```
@@ -69,8 +74,8 @@ http:
 Transform query parameters using templates:
 
 ```yaml
-Query:
-  transform:
+ModifierQuery:
+  Transform:
     question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
     user_id: "[[ .request.query.uid ]]"
 ```
@@ -80,11 +85,11 @@ Query:
 Modify request bodies sent to upstream services:
 
 ```yaml
-Request: |
+ModifierRequest: |
   {
-    "question": "[[ .request.body.ask ]]",
-    "timestamp": [[ .context.unixtime ]],
-    "user": "[[ .request.body.user ]]"
+    "question": "[[ .request.api.body.ask ]]",
+    "timestamp": "[[ .context.unixtime ]]",
+    "user": "[[ .request.api.body.user ]]"
   }
 ```
 
@@ -93,7 +98,7 @@ Request: |
 Transform response bodies based on HTTP status codes:
 
 ```yaml
-Response:
+ModifierResponse:
   "200": |
     {
       "success": true,
@@ -113,7 +118,8 @@ The plugin provides several context variables accessible in templates:
 
 ### Request Context
 
-- `.request.body` - Request body (parsed as JSON)
+- `.request.api.body` - Original request body (parsed as JSON)
+- `.request.modified.body` - Modified request body after transformation
 - `.request.query` - Query parameters as key-value pairs
 - `.request.header` - Request headers
 - `.request.method` - HTTP method
@@ -143,10 +149,10 @@ middlewares:
   query-transformer:
     plugin:
       modifier:
-        Query:
-          transform:
+        ModifierQuery:
+          Transform:
             # Transform ask_id to question_id with timestamp
-            question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
+            question_id: "ask_[[ .context.unixtime ]]"
 ```
 
 ### Request Body Modification
@@ -171,18 +177,16 @@ middlewares:
   response-modifier:
     plugin:
       modifier:
-        Response:
+        ModifierResponse:
           "200": |
             {
               "id": [[ .response.body.id ]],
-              "answer": "[[ .request.body.ask ]]",
-              "timestamp": [[ .context.unixtime ]],
+              "answer": "[[ .request.api.body.ask ]]",
+              "timestamp": [[ .request.modified.body.timestamp ]],
               "datas": [
-                [[ range .response.body.data_array_of_maps ]]
-                {
-                  "id": "[[ .key1 ]]",
-                  "value": "[[ .key2 ]]"
-                }[[ if not (isLast .) ]],[[ end ]]
+                [[ $dataList := .response.body.data_array_of_maps ]]
+                [[ range $index, $element := $dataList ]]
+                [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
                 [[ end ]]
               ]
             }
@@ -205,26 +209,24 @@ http:
     chat-modifier:
       plugin:
         modifier:
-          Query: 
-            transform:
-              question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
-          Request: |
+          ModifierQuery: 
+            Transform:
+              question_id: "ask_[[ .context.unixtime ]]"
+          ModifierRequest: |
             {
-              "question": "[[ .request.body.ask ]]",
-              "timestamp": [[ .context.unixtime ]]
+              "question": "[[ .request.api.body.ask ]]",
+              "timestamp": "[[ .context.unixtime ]]"
             }
-          Response:
+          ModifierResponse:
             "200": |
               {
                 "id": [[ .response.body.id ]],
-                "answer": "[[ .request.body.ask ]]",
-                "timestamp": [[ .context.unixtime ]],
+                "answer": "[[ .request.api.body.ask ]]",
+                "timestamp": [[ .request.modified.body.timestamp ]],
                 "datas": [
-                  [[ range .response.body.data_array_of_maps ]]
-                  {
-                    "id": "[[ .key1 ]]",
-                    "value": "[[ .key2 ]]"
-                  }[[ if not (isLast .) ]],[[ end ]]
+                  [[ $dataList := .response.body.data_array_of_maps ]]
+                  [[ range $index, $element := $dataList ]]
+                    [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
                   [[ end ]]
                 ]
               }
@@ -249,7 +251,7 @@ http:
 
 ```
 traefik-modifier/
-├── modifier.go          # Main plugin logic
+├── modifier.go          # Main plugin logic (package: traefik_modifier)
 ├── body.go             # Body modification handlers
 ├── query.go            # Query parameter handlers
 ├── pkg/
@@ -261,8 +263,8 @@ traefik-modifier/
 │   ├── Dockerfile      # Plugin container
 │   └── test-backend.js # Test backend service
 ├── docker-compose.yml  # Development environment
-├── go.mod             # Go module definition
-└── Makefile          # Build automation
+├── go.mod             # Go module (github.com/hukumonline-com/traefik-modifier)
+└── .traefik.yml       # Plugin metadata
 ```
 
 ### Building
@@ -284,15 +286,18 @@ The plugin includes a test backend service for development and testing:
 
 ```bash
 # Start the development environment
-docker-compose up
+docker compose up
 
 # Test query transformation
-curl "http://chat.localhost/test?ask_id=123"
+curl "http://chat.localhost:8000/test?ask_id=123"
 
 # Test request/response modification
-curl -X POST http://chat.localhost/test \
+curl -X POST http://chat.localhost:8000/test \
   -H "Content-Type: application/json" \
   -d '{"ask": "What is the weather?"}'
+
+# Access Traefik dashboard
+open http://traefik.localhost:8080
 ```
 
 ## Error Handling

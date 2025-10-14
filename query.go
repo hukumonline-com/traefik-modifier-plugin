@@ -1,4 +1,4 @@
-package modifier
+package traefik_modifier
 
 import (
 	"bytes"
@@ -70,14 +70,22 @@ func (qm *QueryModifier) ModifyQueryWithContext(req *http.Request, ctx *Template
 
 		result := buf.String()
 		if result != "" {
+			if values.Has(targetParam) {
+				log.Printf("Overwriting existing query parameter %s", targetParam)
+				values.Set(targetParam, result)
+			} else {
+				log.Printf("Setting new query parameter %s", targetParam)
+				values.Add(targetParam, result)
+			}
+
 			// Set the transformed value
-			values.Set(targetParam, result)
 			log.Printf("Query parameter %s transformed to: %s", targetParam, result)
 		}
 	}
 
 	// Update the request URL with modified query parameters
 	req.URL.RawQuery = values.Encode()
+	req.RequestURI = req.URL.RequestURI()
 
 	return nil
 }

@@ -16,21 +16,21 @@ http:
     chat-modifier:
       plugin:
         modifier:
-          Query: 
-            transform:
+          ModifierQuery: 
+            Transform:
               # Transform ask_id parameter to question_id with context timestamp
-              question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
-          Request: |
+              question_id: "ask_[[ .context.unixtime ]]"
+          ModifierRequest: |
               {
-                "question": "[[ .request.body.ask ]]",
-                "timestamp": [[ .context.unixtime ]]
+                "question": "[[ .request.api.body.ask ]]",
+                "timestamp": "[[ .context.unixtime ]]"
               }
-          Response:
+          ModifierResponse:
             "200": |
               {
                 "id": [[ .response.body.id ]],
-                "answer": "[[ .request.body.ask ]]",
-                "timestamp": [[ .context.unixtime ]],
+                "answer": "[[ .request.api.body.ask ]]",
+                "timestamp": [[ .request.modified.body.timestamp ]],
                 "datas": [
                   [[ $dataList := .response.body.data_array_of_maps ]]
                   [[ $listLen := len $dataList ]]

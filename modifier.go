@@ -1,4 +1,4 @@
-package modifier
+package traefik_modifier
 
 import (
 	"context"
@@ -15,9 +15,9 @@ func init() {
 
 // Config holds the plugin configuration
 type Config struct {
-	Request  string         `json:"request,omitempty"`
-	Response map[int]string `json:"response,omitempty"`
-	Query    *QueryConfig   `json:"query,omitempty"`
+	ModifierRequest  string         `json:"modifier_request,omitempty"`
+	ModifierResponse map[int]string `json:"modifier_response,omitempty"`
+	ModifierQuery    *QueryConfig   `json:"modifier_query,omitempty"`
 }
 
 // TemplateContext holds context data for templates
@@ -40,12 +40,12 @@ type modifier struct {
 // New creates and returns a new modifier plugin instance
 func New(ctx context.Context, next http.Handler, config *Config, name string) (http.Handler, error) {
 	// Initialize body modifier
-	bodyModifier := NewBodyModifier(config.Request, config.Response)
+	bodyModifier := NewBodyModifier(config.ModifierRequest, config.ModifierResponse)
 
 	// Initialize query modifier
 	var queryModifier *QueryModifier
-	if config.Query != nil && len(config.Query.Transform) > 0 {
-		queryModifier = NewQueryModifier(config.Query.Transform)
+	if config.ModifierQuery != nil && len(config.ModifierQuery.Transform) > 0 {
+		queryModifier = NewQueryModifier(config.ModifierQuery.Transform)
 	}
 
 	// Initialize template context
@@ -65,11 +65,10 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 // ServeHTTP processes the HTTP request and response
 func (m *modifier) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	var err error
-	var originalRequestBody []byte
+	var originalRequestBody, modifiedRequestBody []byte
 
-	// Update context timestamp for each request
 	m.context = &TemplateContext{
-		"unixtime": time.Now().Unix(),
+		"unixtime": time.Now().UnixNano(),
 	}
 
 	// Handle query parameter modification
@@ -81,7 +80,7 @@ func (m *modifier) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Handle request body masking
 	if m.bodyModifier != nil {
-		originalRequestBody, err = m.bodyModifier.ModifyRequestBodyWithContext(req, m.context)
+		originalRequestBody, modifiedRequestBody, err = m.bodyModifier.ModifyRequestBodyWithContext(req, m.context)
 		if err != nil {
 			http.Error(rw, fmt.Sprintf("Request masking error: %v", err), http.StatusBadRequest)
 			return
@@ -90,7 +89,7 @@ func (m *modifier) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	// Handle response masking if configured
 	if m.bodyModifier != nil && len(m.bodyModifier.templateResponse) > 0 {
-		m.handleResponseMasking(rw, req, originalRequestBody)
+		m.handleResponseMasking(rw, req, originalRequestBody, modifiedRequestBody)
 		return
 	}
 
@@ -99,7 +98,7 @@ func (m *modifier) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 }
 
 // handleResponseMasking handles response body modification
-func (m *modifier) handleResponseMasking(rw http.ResponseWriter, req *http.Request, originalRequestBody []byte) {
+func (m *modifier) handleResponseMasking(rw http.ResponseWriter, req *http.Request, originalRequestBody, modifiedRequestBody []byte) {
 	// Create a response writer to capture the response
 	captureWriter := NewResponseWriter(rw)
 
@@ -107,7 +106,7 @@ func (m *modifier) handleResponseMasking(rw http.ResponseWriter, req *http.Reque
 	m.next.ServeHTTP(captureWriter, req)
 
 	// Use body modifier to handle response modification with context
-	if err := m.bodyModifier.ModifyResponseWithContext(rw, captureWriter, originalRequestBody, m.context); err != nil {
+	if err := m.bodyModifier.ModifyResponseWithContext(rw, captureWriter, originalRequestBody, modifiedRequestBody, m.context); err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}

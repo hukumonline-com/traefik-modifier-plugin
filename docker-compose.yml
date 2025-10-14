@@ -3,8 +3,8 @@ version: '3.1'
 services:
   # Traefik reverse proxy with the modifier plugin
   traefik:
-    image: traefik:v3.0
-    container_name: traefik-masking
+    image: traefik:v3.1
+    container_name: traefik-modifier
     command:
       - --configFile=/etc/traefik/traefik.yaml
     ports:
@@ -14,7 +14,6 @@ services:
       - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
       - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
       - .:/plugins-local/src/github.com/hukumonline-com/traefik-modifier:ro
-      - "./logs:/var/log/traefik"
     networks:
       - traefik-network
     labels:
