@@ -1,0 +1,47 @@
+# dynamic.yaml
+
+http:
+  routers:
+    # Chat service router - for request and response masking
+    chat:
+      rule: "Host(`chat.localhost`)"
+      entryPoints:
+        - web
+      middlewares:
+        - chat-modifier
+      service: chat-service
+
+  middlewares:
+    # Chat service middleware - masks both request and response
+    chat-modifier:
+      plugin:
+        modifier:
+          Query: 
+            transform:
+              # Transform ask_id parameter to question_id with context timestamp
+              question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
+          Request: |
+              {
+                "question": "[[ .request.body.ask ]]",
+                "timestamp": [[ .context.unixtime ]]
+              }
+          Response:
+            "200": |
+              {
+                "id": [[ .response.body.id ]],
+                "answer": "[[ .request.body.ask ]]",
+                "timestamp": [[ .context.unixtime ]],
+                "datas": [
+                  [[ $dataList := .response.body.data_array_of_maps ]]
+                  [[ $listLen := len $dataList ]]
+                  [[ range $index, $element := $dataList ]]
+                    [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
+                  [[ end ]]
+                ]
+              }
+
+  services:
+    chat-service:
+      loadBalancer:
+        servers:
+          - url: "http://chat-service:3000"

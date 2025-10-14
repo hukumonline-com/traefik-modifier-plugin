@@ -1,0 +1,39 @@
+# traefik.yaml
+
+# EntryPoints define the ports where Traefik listens for incoming traffic.
+entryPoints:
+  web:
+    address: ":8000"
+#  websecure:
+#    address: ":8443"
+
+# Providers define where Traefik finds its dynamic configuration.
+providers:
+  file:
+    filename: "/etc/traefik/dynamic.yaml"  # Path to your dynamic configuration file
+
+# API and dashboard configuration.
+api:
+  dashboard: true
+  insecure: true  # Only use insecure in a development environment. For production, use secure settings.
+
+# Log settings
+log:
+  level: DEBUG # DEBUG
+  # format: json # or common
+  filePath: ""
+  # filePath: "/path/to/traefik.log"  # Set to desired log file path
+
+## Define certificates (if using HTTPS)
+#certificatesResolvers:
+#  myresolver:
+#    acme:
+#      email: your-email@example.com
+#      storage: acme.json
+#      httpChallenge:
+#        entryPoint: web
+
+experimental:
+  localPlugins:
+    modifier:
+      moduleName: github.com/hukumonline-com/traefik-modifier

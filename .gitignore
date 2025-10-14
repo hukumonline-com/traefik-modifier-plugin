@@ -1,0 +1,28 @@
+# Build artifacts
+*.so
+*.dylib
+*.dll
+
+# Go
+vendor/
+*.mod.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+coverage.out
+test-results/

@@ -1,0 +1,40 @@
+# Traefik plugin configuration
+displayName: Traefik Modifier Plugin
+type: middleware
+iconPath: .assets/icon.png
+
+import: github.com/hukumonline-com/traefik-modifier
+
+summary: 'Modify HTTP requests and responses using Go templates with query parameter transformation, request/response body modification, and dynamic context injection'
+
+testData:
+  Query:
+    transform:
+      question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
+      user_id: "[[ .request.query.uid ]]"
+  Request: |
+    {
+      "question": "[[ .request.body.ask ]]",
+      "timestamp": [[ .context.unixtime ]],
+      "source": "traefik-modifier"
+    }
+  Response:
+    200: |
+      {
+        "id": [[ .response.body.id ]],
+        "answer": "[[ .request.body.ask ]]", 
+        "timestamp": [[ .context.unixtime ]],
+        "datas": [
+          [[ range .response.body.data_array_of_maps ]]
+          {
+            "id": "[[ .key1 ]]",
+            "value": "[[ .key2 ]]"
+          }[[ if not (isLast .) ]],[[ end ]]
+          [[ end ]]
+        ]
+      }
+    404: |
+      {
+        "error": "Resource not found",
+        "timestamp": [[ .context.unixtime ]]
+      }
