@@ -1,4 +1,4 @@
-package traefik_modifier
+package traefik_modifier_plugin
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"text/template"
 
-	"github.com/hukumonline-com/traefik-modifier/pkg"
+	"github.com/hukumonline-com/traefik-modifier-plugin/pkg"
 )
 
 // QueryConfig holds the query transformation configuration

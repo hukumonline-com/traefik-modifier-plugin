@@ -3,7 +3,7 @@ displayName: Traefik Modifier Plugin
 type: middleware
 iconPath: .assets/icon.png
 
-import: github.com/hukumonline-com/traefik-modifier
+import: github.com/hukumonline-com/traefik-modifier-plugin
 
 summary: 'Modify HTTP requests and responses using Go templates with query parameter transformation, request/response body modification, and dynamic context injection'
 

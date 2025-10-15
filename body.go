@@ -1,4 +1,4 @@
-package traefik_modifier
+package traefik_modifier_plugin
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"text/template"
 
-	"github.com/hukumonline-com/traefik-modifier/pkg"
+	"github.com/hukumonline-com/traefik-modifier-plugin/pkg"
 )
 
 // BodyModifier handles request and response body modifications

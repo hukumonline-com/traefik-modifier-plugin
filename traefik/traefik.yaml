@@ -36,4 +36,4 @@ log:
 experimental:
   localPlugins:
     modifier:
-      moduleName: github.com/hukumonline-com/traefik-modifier
+      moduleName: github.com/hukumonline-com/traefik-modifier-plugin

@@ -3,7 +3,7 @@ version: '3.1'
 services:
   # Traefik reverse proxy with the modifier plugin
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.5.3
     container_name: traefik-modifier
     command:
       - --configFile=/etc/traefik/traefik.yaml
@@ -13,7 +13,7 @@ services:
     volumes:
       - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
       - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
-      - .:/plugins-local/src/github.com/hukumonline-com/traefik-modifier:ro
+      - .:/plugins-local/src/github.com/hukumonline-com/traefik-modifier-plugin:ro
     networks:
       - traefik-network
     labels:
