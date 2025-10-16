@@ -68,13 +68,17 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 		return nil, nil, fmt.Errorf("failed to execute request template: %w", err)
 	}
 
-	// Update request body
+	// Clean and update request body
 	newBody := buf.Bytes()
-	req.Body = io.NopCloser(bytes.NewReader(newBody))
-	req.ContentLength = int64(len(newBody))
-	req.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
 
-	return body, newBody, nil
+	// Clean JSON by removing "<no value>" strings
+	cleanedBody := bytes.ReplaceAll(newBody, []byte(`"<no value>"`), []byte(`""`))
+
+	req.Body = io.NopCloser(bytes.NewReader(cleanedBody))
+	req.ContentLength = int64(len(cleanedBody))
+	req.Header.Set("Content-Length", strconv.Itoa(len(cleanedBody)))
+
+	return body, cleanedBody, nil
 }
 
 // ResponseWriter wraps http.ResponseWriter to capture response
@@ -182,21 +186,32 @@ func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWr
 	}
 
 	// Write modified response
-	// Format JSON as minified (compact)
+	// Check if response is valid JSON and clean it
+	responseBytes := buf.Bytes()
+	var formattedJSON []byte
+
 	var jsonData interface{}
-	if err := json.Unmarshal(buf.Bytes(), &jsonData); err != nil {
+	if err := json.Unmarshal(responseBytes, &jsonData); err != nil {
 		// If not valid JSON, use as is
-		newBody := buf.Bytes()
-		originalWriter.Header().Set("Content-Length", strconv.Itoa(len(newBody)))
+		originalWriter.Header().Set("Content-Length", strconv.Itoa(len(responseBytes)))
 		originalWriter.WriteHeader(capturedResponse.statusCode)
-		originalWriter.Write(newBody)
+		originalWriter.Write(responseBytes)
 		return nil
 	}
 
-	// Format JSON as minified (compact)
-	formattedJSON, err := json.Marshal(jsonData)
-	if err != nil {
-		return fmt.Errorf("failed to format JSON: %v", err)
+	// Clean JSON by removing "<no value>" strings and format as minified
+	cleanedJSON := bytes.ReplaceAll(responseBytes, []byte(`"<no value>"`), []byte(`""`))
+
+	// Re-parse to ensure valid JSON structure after cleaning
+	if err := json.Unmarshal(cleanedJSON, &jsonData); err != nil {
+		// If cleaning broke JSON, fallback to original marshaling
+		formattedJSON, err = json.Marshal(jsonData)
+		if err != nil {
+			return fmt.Errorf("failed to format JSON: %v", err)
+		}
+	} else {
+		// Use cleaned JSON directly (already minified from template output)
+		formattedJSON = cleanedJSON
 	}
 
 	// Write formatted response

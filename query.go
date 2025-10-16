@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"text/template"
 
 	"github.com/hukumonline-com/traefik-modifier-plugin/pkg"
@@ -69,6 +70,10 @@ func (qm *QueryModifier) ModifyQueryWithContext(req *http.Request, ctx *Template
 		}
 
 		result := buf.String()
+
+		// Clean the result by removing "<no value>" strings
+		result = strings.ReplaceAll(result, "<no value>", "")
+
 		if result != "" {
 			if values.Has(targetParam) {
 				log.Printf("Overwriting existing query parameter %s", targetParam)
