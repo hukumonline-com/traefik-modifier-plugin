@@ -5,36 +5,91 @@ iconPath: .assets/icon.png
 
 import: github.com/hukumonline-com/traefik-modifier-plugin
 
-summary: 'Modify HTTP requests and responses using Go templates with query parameter transformation, request/response body modification, and dynamic context injection'
+summary: 'Modify HTTP headers, query parameters, request/response body using Go templates with dynamic context injection and smart header operations'
+
+# Features:
+# - Header Modification: Smart Set/Add operations based on existing headers
+# - Query Parameter Transformation: Dynamic query parameter modification
+# - Request Body Modification: Transform request payload with templates
+# - Response Body Modification: Transform response based on status codes
+# - Context Injection: Access to timestamps, request metadata, and more
+# - Template Support: Go template syntax with [[ ]] delimiters
 
 testData:
+  Header:
+    Authorization: |
+      [[ if eq (index .request.headers "x-api-key") "sk-didin" ]]
+        Bearer sk-didin
+      [[ else if eq (index .request.headers "x-api-key") "sk-test" ]]
+        Bearer sk-test
+      [[ else ]]
+        Bearer default-token
+      [[ end ]]
+    X-Request-ID: "req_[[ .context.unixtime ]]"
+    X-Source-Method: "[[ .request.method ]]"
+    X-Original-Path: "[[ .request.path ]]"
   Query:
-    transform:
-      question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
-      user_id: "[[ .request.query.uid ]]"
+    Transform:
+      question_id: "ask_[[ .context.unixtime ]]"
+      timestamp: "[[ .context.unixtime ]]"
+      method: "[[ .request.method ]]"
   Request: |
     {
-      "question": "[[ .request.body.ask ]]",
+      "question": "[[ .request.api.body.ask ]]",
       "timestamp": [[ .context.unixtime ]],
-      "source": "traefik-modifier"
+      "metadata": {
+        "source": "traefik-modifier",
+        "method": "[[ .request.method ]]",
+        "path": "[[ .request.path ]]",
+        "user_agent": "[[ index .request.headers \"user-agent\" ]]"
+      }
     }
   Response:
     200: |
       {
         "id": [[ .response.body.id ]],
-        "answer": "[[ .request.body.ask ]]", 
-        "timestamp": [[ .context.unixtime ]],
+        "answer": "[[ .request.api.body.ask ]]",
+        "processed_answer": "[[ .response.body.text ]]",
+        "timestamp": [[ .request.modified.body.timestamp ]],
+        "metadata": {
+          "request_id": "[[ .request.modified.body.metadata.request_id ]]",
+          "processing_time": [[ .context.unixtime ]],
+          "status": [[ .response.status ]]
+        },
         "datas": [
-          [[ range .response.body.data_array_of_maps ]]
-          {
-            "id": "[[ .key1 ]]",
-            "value": "[[ .key2 ]]"
-          }[[ if not (isLast .) ]],[[ end ]]
+          [[ $dataList := .response.body.data_array_of_maps ]]
+          [[ $listLen := len $dataList ]]
+          [[ range $index, $element := $dataList ]]
+            [[ if $index ]], [[ end ]]
+            {
+              "key": "[[ $element.key1 ]]",
+              "value": "[[ $element.key2 ]]",
+              "index": [[ $index ]]
+            }
           [[ end ]]
         ]
       }
+    400: |
+      {
+        "error": {
+          "message": "[[ .response.body.error ]]",
+          "code": [[ .response.status ]]
+        },
+        "request_info": {
+          "method": "[[ .request.method ]]",
+          "path": "[[ .request.path ]]",
+          "timestamp": [[ .context.unixtime ]]
+        }
+      }
     404: |
       {
-        "error": "Resource not found",
-        "timestamp": [[ .context.unixtime ]]
+        "error": {
+          "message": "Resource not found",
+          "code": 404
+        },
+        "timestamp": [[ .context.unixtime ]],
+        "request_context": {
+          "original_query": "[[ .request.api.body.ask ]]",
+          "method": "[[ .request.method ]]"
+        }
       }

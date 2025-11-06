@@ -1,371 +1,556 @@
-# Traefik Modifier Plugin
+# Traefik Modifier Plugin - Complete Documentation
 
+Plugin Traefik untuk modifikasi request dan response secara dinamis menggunakan template Go dengan dukungan header, query, dan body modification.
+
+## Table of Contents
+- [Overview](#overview)
+- [Template Variables](#template-variables)
+- [Request API Variables](#request-api-variables)
+- [Modifier Request Variables](#modifier-request-variables)
+- [Modifier Response Variables](#modifier-response-variables)
+- [Context Variables](#context-variables)
+- [Configuration Examples](#configuration-examples)
+- [Template Syntax](#template-syntax)
+
+## Overview
+
+Plugin ini mendukung tiga jenis modifikasi utama:
+1. **Header Modification** - Memodifikasi HTTP headers
+2. **Query Modification** - Memodifikasi query parameters
+3. **Body Modification** - Memodifikasi request dan response body
+
+Setiap modifikasi menggunakan template Go dengan delimiter `[[` dan `]]`.
+
+## Template Variables
+
+### Global Template Structure
+
+Semua template memiliki akses ke struktur data berikut:
+
+```go
+{
+  "request": {
+    "headers": map[string]string,     // HTTP headers (lowercase keys)
+    "method": string,                 // HTTP method (GET, POST, etc.)
+    "url": string,                   // Full URL
+    "path": string,                  // URL path
+    "api": {                         // Available in modifier request/response
+      "body": map[string]interface{} // Parsed request body
+    },
+    "modified": {                    // Available in modifier response
+      "body": map[string]interface{} // Modified request body
+    }
+  },
+  "response": {                      // Available in modifier response only
+    "body": map[string]interface{},  // Original response body
+    "status": int,                   // HTTP status code
+    "headers": map[string]string     // Response headers
+  },
+  "context": {
+    "unixtime": int64               // Current Unix timestamp (nanoseconds)
+  }
+}
 ```
-┌─────────────────┐    ┌────────────────────────┐    ┌──────────────┐    ┌───────────────────────┐    ┌──────────────────┐
-│   REQUEST API   │───▶│    MODIFIER REQUEST    │───▶│    SERVICE   │───▶│   MODIFIER RESPONSE   │───▶│  RESPONSE API    │
-│                 │    │    [[request.api]]     │    │  (YOUR APP)  │    │    [[request.api]]    │    │                  │
-│                 │    │                        │    │              │    │  [[request.modifier]] │    │                  │
-└─────────────────┘    └────────────────────────┘    └──────────────┘    └───────────────────────┘    └──────────────────┘
 
-```
+## Request API Variables
 
-A powerful Traefik middleware plugin that allows you to modify HTTP requests and responses using Go templates. This plugin supports query parameter transformation, request body modification, and response body masking with dynamic context injection.
+### Dalam Modifier Header dan Query
 
-## Features
+Variables yang tersedia untuk template header dan query modification:
 
-- **Query Parameter Transformation**: Transform query parameters using templates
-- **Request Body Modification**: Modify request bodies with template-based transformations
-- **Response Body Masking**: Transform response bodies based on status codes
-- **Context Injection**: Access dynamic context variables like timestamps in templates
-- **Template Engine**: Uses Go templates with custom function maps
-- **JSON Formatting**: Automatic JSON formatting (minified output)
-
-## Installation
-
-### Using Docker Compose
-
-Add the plugin to your `docker-compose.yml`:
-
+#### Request Information
 ```yaml
-version: '3.1'
-services:
-  traefik:
-    image: traefik:v3.1
-    command:
-      - --configFile=/etc/traefik/traefik.yaml
-    volumes:
-      - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
-      - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
-      - .:/plugins-local/src/github.com/hukumonline-com/traefik-modifier:ro
-    # ... other configuration
+# HTTP Method
+Method: "[[ .request.method ]]"
+
+# URL Components  
+FullURL: "[[ .request.url ]]"
+Path: "[[ .request.path ]]"
+
+# Headers (case-insensitive access)
+ApiKey: "[[ index .request.headers \"x-api-key\" ]]"
+UserAgent: "[[ index .request.headers \"user-agent\" ]]"
+ContentType: "[[ index .request.headers \"content-type\" ]]"
+
+# Conditional based on headers
+ConditionalValue: |
+  [[ if eq (index .request.headers "x-api-key") "secret" ]]
+    authorized
+  [[ else ]]
+    unauthorized
+  [[ end ]]
 ```
 
-### Plugin Configuration
-
-Configure the plugin in your Traefik dynamic configuration:
-
+#### Context Data
 ```yaml
-http:
-  middlewares:
-    my-modifier:
-      plugin:
-        modifier:
-          ModifierQuery:
-            Transform:
-              new_param: "[[ .request.query.old_param ]]_[[ .context.unixtime ]]"
-          ModifierRequest: |
-            {
-              "question": "[[ .request.api.body.ask ]]",
-              "timestamp": "[[ .context.unixtime ]]"
-            }
-          ModifierResponse:
-            "200": |
-              {
-                "id": [[ .response.body.id ]],
-                "data": "[[ .request.api.body.question ]]",
-                "timestamp": [[ .context.unixtime ]]
-              }
+# Timestamp
+RequestID: "req_[[ .context.unixtime ]]"
+Timestamp: "[[ .context.unixtime ]]"
 ```
 
-## Configuration Options
+### Example Header Modification
+```yaml
+ModifierHeader:
+  Authorization: |
+    [[ if eq (index .request.headers "x-api-key") "sk-didin" ]]
+      Bearer sk-didin
+    [[ else if eq (index .request.headers "x-api-key") "sk-test" ]]
+      Bearer sk-test
+    [[ else ]]
+      Bearer default-token
+    [[ end ]]
+  X-Request-ID: "req_[[ .context.unixtime ]]"
+  X-Original-Method: "[[ .request.method ]]"
+  X-Original-Path: "[[ .request.path ]]"
+```
 
-### Query Configuration
-
-Transform query parameters using templates:
-
+### Example Query Modification
 ```yaml
 ModifierQuery:
   Transform:
-    question_id: "[[ .request.query.ask_id ]]_[[ .context.unixtime ]]"
-    user_id: "[[ .request.query.uid ]]"
+    question_id: "ask_[[ .context.unixtime ]]"
+    timestamp: "[[ .context.unixtime ]]"
+    method: "[[ .request.method ]]"
+    source: |
+      [[ if eq .request.path "/api/v1/chat" ]]
+        chat-api
+      [[ else ]]
+        other-api
+      [[ end ]]
 ```
 
-### Request Configuration
+## Modifier Request Variables
 
-Modify request bodies sent to upstream services:
+### Request Body Modification
 
+Variables yang tersedia dalam template modifier request:
+
+#### Full Request Context
+```go
+{
+  "request": {
+    "headers": map[string]string,     // All request headers
+    "method": string,                 // HTTP method
+    "url": string,                   // Complete URL
+    "path": string,                  // URL path
+    "api": {
+      "body": map[string]interface{} // Original parsed request body
+    }
+  },
+  "context": {
+    "unixtime": int64               // Current timestamp
+  }
+}
+```
+
+#### Accessing Request Body Data
 ```yaml
 ModifierRequest: |
   {
     "question": "[[ .request.api.body.ask ]]",
+    "user_id": "[[ .request.api.body.user_id ]]",
     "timestamp": "[[ .context.unixtime ]]",
-    "user": "[[ .request.api.body.user ]]"
+    "method": "[[ .request.method ]]",
+    "headers": {
+      "authorization": "[[ index .request.headers \"authorization\" ]]",
+      "user-agent": "[[ index .request.headers \"user-agent\" ]]"
+    },
+    "metadata": {
+      "original_path": "[[ .request.path ]]",
+      "request_id": "req_[[ .context.unixtime ]]"
+    }
   }
 ```
 
-### Response Configuration
+#### Complex Request Body Transformation
+```yaml
+ModifierRequest: |
+  {
+    "query": {
+      "text": "[[ .request.api.body.question ]]",
+      "context": "[[ .request.api.body.context ]]",
+      "parameters": {
+        "max_tokens": [[ .request.api.body.max_tokens ]],
+        "temperature": [[ .request.api.body.temperature ]]
+      }
+    },
+    "metadata": {
+      "source": "traefik-modifier",
+      "timestamp": [[ .context.unixtime ]],
+      "request_method": "[[ .request.method ]]",
+      "api_key": "[[ index .request.headers \"x-api-key\" ]]"
+    },
+    "original_request": {
+      "url": "[[ .request.url ]]",
+      "path": "[[ .request.path ]]"
+    }
+  }
+```
 
-Transform response bodies based on HTTP status codes:
+### Conditional Request Modification
+```yaml
+ModifierRequest: |
+  [[ if eq .request.method "POST" ]]
+  {
+    "action": "create",
+    "data": "[[ .request.api.body.data ]]",
+    "timestamp": [[ .context.unixtime ]]
+  }
+  [[ else if eq .request.method "GET" ]]
+  {
+    "action": "read",
+    "query": "[[ .request.api.body.query ]]",
+    "timestamp": [[ .context.unixtime ]]
+  }
+  [[ else ]]
+  {
+    "action": "other",
+    "method": "[[ .request.method ]]",
+    "timestamp": [[ .context.unixtime ]]
+  }
+  [[ end ]]
+```
 
+## Modifier Response Variables
+
+### Response Body Modification
+
+Variables yang tersedia dalam template modifier response:
+
+#### Full Response Context
+```go
+{
+  "request": {
+    "headers": map[string]string,     // Original request headers
+    "method": string,                 // HTTP method
+    "url": string,                   // Complete URL
+    "path": string,                  // URL path
+    "api": {
+      "body": map[string]interface{} // Original request body
+    },
+    "modified": {
+      "body": map[string]interface{} // Modified request body (after ModifierRequest)
+    }
+  },
+  "response": {
+    "body": map[string]interface{},  // Original response body from backend
+    "status": int,                   // HTTP status code
+    "headers": map[string]string     // Response headers
+  },
+  "context": {
+    "unixtime": int64               // Current timestamp
+  }
+}
+```
+
+#### Accessing Response Data
+```yaml
+ModifierResponse:
+  "200": |
+    {
+      "id": [[ .response.body.id ]],
+      "answer": "[[ .response.body.text ]]",
+      "metadata": {
+        "original_question": "[[ .request.api.body.ask ]]",
+        "modified_question": "[[ .request.modified.body.question ]]",
+        "processing_time": [[ .context.unixtime ]],
+        "status": [[ .response.status ]]
+      },
+      "request_info": {
+        "method": "[[ .request.method ]]",
+        "path": "[[ .request.path ]]",
+        "user_agent": "[[ index .request.headers \"user-agent\" ]]"
+      }
+    }
+```
+
+#### Complex Response Transformation
 ```yaml
 ModifierResponse:
   "200": |
     {
       "success": true,
-      "data": [[ .response.body ]],
-      "timestamp": [[ .context.unixtime ]]
+      "data": {
+        "response_id": [[ .response.body.id ]],
+        "content": "[[ .response.body.message ]]",
+        "confidence": [[ .response.body.confidence ]],
+        "metadata": {
+          "model": "[[ .response.body.model ]]",
+          "tokens_used": [[ .response.body.usage.total_tokens ]]
+        }
+      },
+      "request_context": {
+        "original_query": "[[ .request.api.body.query ]]",
+        "processed_query": "[[ .request.modified.body.question ]]",
+        "timestamp": [[ .request.modified.body.timestamp ]],
+        "request_id": "req_[[ .context.unixtime ]]"
+      },
+      "response_metadata": {
+        "status_code": [[ .response.status ]],
+        "content_type": "[[ index .response.headers \"content-type\" ]]",
+        "server": "[[ index .response.headers \"server\" ]]"
+      }
     }
-  "404": |
+  "400": |
     {
-      "error": "Resource not found",
-      "timestamp": [[ .context.unixtime ]]
+      "success": false,
+      "error": {
+        "message": "[[ .response.body.error ]]",
+        "code": [[ .response.status ]],
+        "timestamp": [[ .context.unixtime ]]
+      },
+      "request_info": {
+        "method": "[[ .request.method ]]",
+        "path": "[[ .request.path ]]",
+        "original_body": "[[ .request.api.body ]]"
+      }
     }
 ```
 
-## Template Context
-
-The plugin provides several context variables accessible in templates:
-
-### Request Context
-
-- `.request.api.body` - Original request body (parsed as JSON)
-- `.request.modified.body` - Modified request body after transformation
-- `.request.query` - Query parameters as key-value pairs
-- `.request.header` - Request headers
-- `.request.method` - HTTP method
-- `.request.path` - Request path
-
-### Response Context
-
-- `.response.body` - Response body (parsed as JSON)
-
-### Dynamic Context
-
-- `.context.unixtime` - Current Unix timestamp (updated for each request)
-
-## Template Functions
-
-The plugin includes custom template functions via `pkg.SimpleFuncMap()`:
-
-- Standard Go template functions
-- Custom utility functions for data manipulation
-
-## Examples
-
-### Basic Query Parameter Transformation
-
+#### Array Processing in Response
 ```yaml
-middlewares:
-  query-transformer:
-    plugin:
-      modifier:
-        ModifierQuery:
-          Transform:
-            # Transform ask_id to question_id with timestamp
-            question_id: "ask_[[ .context.unixtime ]]"
-```
-
-### Request Body Modification
-
-```yaml
-middlewares:
-  request-modifier:
-    plugin:
-      modifier:
-        Request: |
+ModifierResponse:
+  "200": |
+    {
+      "results": [
+        [[ $dataList := .response.body.data_array ]]
+        [[ $listLen := len $dataList ]]
+        [[ range $index, $element := $dataList ]]
+          [[ if $index ]], [[ end ]]
           {
-            "question": "[[ .request.body.ask ]]",
-            "timestamp": [[ .context.unixtime ]],
-            "source": "traefik-modifier"
+            "id": "[[ $element.id ]]",
+            "value": "[[ $element.value ]]",
+            "processed": true,
+            "index": [[ $index ]]
           }
+        [[ end ]]
+      ],
+      "total_items": [[ len .response.body.data_array ]],
+      "request_metadata": {
+        "query": "[[ .request.api.body.search ]]",
+        "timestamp": [[ .context.unixtime ]]
+      }
+    }
 ```
 
-### Response Data Transformation
+## Context Variables
+
+### Available Context Data
 
 ```yaml
-middlewares:
-  response-modifier:
-    plugin:
-      modifier:
-        ModifierResponse:
-          "200": |
-            {
-              "id": [[ .response.body.id ]],
-              "answer": "[[ .request.api.body.ask ]]",
-              "timestamp": [[ .request.modified.body.timestamp ]],
-              "datas": [
-                [[ $dataList := .response.body.data_array_of_maps ]]
-                [[ range $index, $element := $dataList ]]
-                [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
-                [[ end ]]
-              ]
-            }
+# Unix timestamp (nanoseconds)
+Timestamp: "[[ .context.unixtime ]]"
+
+# Derived values
+RequestID: "req_[[ .context.unixtime ]]"
+SessionID: "session_[[ .context.unixtime ]]"
+
+# Formatted timestamp (you can add custom formatting)
+HumanTime: "[[ .context.unixtime ]]"  # Note: This is raw nanoseconds
 ```
 
-### Complete Configuration Example
+## Configuration Examples
+
+### Complete Dynamic Configuration
 
 ```yaml
 http:
-  routers:
-    chat-service:
-      rule: "Host(`chat.localhost`)"
-      entryPoints:
-        - web
-      middlewares:
-        - chat-modifier
-      service: chat-service
-
   middlewares:
-    chat-modifier:
+    full-modifier:
       plugin:
         modifier:
-          ModifierQuery: 
+          # Header modification
+          ModifierHeader:
+            Authorization: |
+              [[ if eq (index .request.headers "x-api-key") "sk-prod" ]]
+                Bearer production-token
+              [[ else if eq (index .request.headers "x-api-key") "sk-dev" ]]
+                Bearer development-token
+              [[ else ]]
+                Bearer default-token
+              [[ end ]]
+            X-Request-ID: "req_[[ .context.unixtime ]]"
+            X-Source-Method: "[[ .request.method ]]"
+            X-Original-Path: "[[ .request.path ]]"
+            
+          # Query parameter modification
+          ModifierQuery:
             Transform:
-              question_id: "ask_[[ .context.unixtime ]]"
+              request_id: "req_[[ .context.unixtime ]]"
+              source_method: "[[ .request.method ]]"
+              
+          # Request body modification
           ModifierRequest: |
             {
-              "question": "[[ .request.api.body.ask ]]",
-              "timestamp": "[[ .context.unixtime ]]"
+              "query": "[[ .request.api.body.question ]]",
+              "context": "[[ .request.api.body.context ]]",
+              "metadata": {
+                "request_id": "req_[[ .context.unixtime ]]",
+                "source_ip": "[[ index .request.headers \"x-forwarded-for\" ]]",
+                "user_agent": "[[ index .request.headers \"user-agent\" ]]",
+                "api_version": "v1",
+                "timestamp": [[ .context.unixtime ]]
+              },
+              "settings": {
+                "max_tokens": [[ .request.api.body.max_tokens ]],
+                "temperature": [[ .request.api.body.temperature ]]
+              }
             }
+            
+          # Response body modification
           ModifierResponse:
             "200": |
               {
-                "id": [[ .response.body.id ]],
-                "answer": "[[ .request.api.body.ask ]]",
-                "timestamp": [[ .request.modified.body.timestamp ]],
-                "datas": [
-                  [[ $dataList := .response.body.data_array_of_maps ]]
-                  [[ range $index, $element := $dataList ]]
-                    [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
-                  [[ end ]]
-                ]
+                "success": true,
+                "response_id": [[ .response.body.id ]],
+                "answer": "[[ .response.body.text ]]",
+                "confidence": [[ .response.body.confidence ]],
+                "request_context": {
+                  "original_question": "[[ .request.api.body.question ]]",
+                  "processed_question": "[[ .request.modified.body.query ]]",
+                  "request_id": "[[ .request.modified.body.metadata.request_id ]]",
+                  "timestamp": [[ .request.modified.body.metadata.timestamp ]]
+                },
+                "processing_info": {
+                  "status": [[ .response.status ]],
+                  "model": "[[ .response.body.model ]]",
+                  "tokens": [[ .response.body.usage.total_tokens ]]
+                }
               }
-
-  services:
-    chat-service:
-      loadBalancer:
-        servers:
-          - url: "http://chat-service:3000"
+            "400": |
+              {
+                "success": false,
+                "error": {
+                  "message": "[[ .response.body.error.message ]]",
+                  "code": "[[ .response.body.error.code ]]",
+                  "type": "[[ .response.body.error.type ]]"
+                },
+                "request_info": {
+                  "method": "[[ .request.method ]]",
+                  "path": "[[ .request.path ]]",
+                  "timestamp": [[ .context.unixtime ]]
+                }
+              }
 ```
 
-### Template Processing
+## Template Syntax
 
-- Uses Go's `text/template` package
-- Custom delimiters: `[[` and `]]`
-- Context injection for dynamic values
-- JSON parsing and formatting
+### Basic Syntax Rules
 
-## Development
+1. **Delimiters**: Gunakan `[[` dan `]]` untuk template expressions
+2. **Variable Access**: Gunakan dot notation (`.request.method`)
+3. **Header Access**: Gunakan `index` function untuk header names dengan special characters
+4. **Conditionals**: Gunakan `if`, `else if`, `else`, `end`
+5. **Loops**: Gunakan `range` untuk array processing
 
-### Project Structure
+### Header Access Patterns
 
-```
-traefik-modifier/
-├── modifier.go          # Main plugin logic (package: traefik_modifier)
-├── body.go             # Body modification handlers
-├── query.go            # Query parameter handlers
-├── pkg/
-│   └── simplefunc.go   # Template functions
-├── traefik/
-│   ├── traefik.yaml    # Traefik configuration
-│   └── dynamic.yaml    # Dynamic configuration
-├── docker/
-│   ├── Dockerfile      # Plugin container
-│   └── test-backend.js # Test backend service
-├── docker-compose.yml  # Development environment
-├── go.mod             # Go module (github.com/hukumonline-com/traefik-modifier)
-└── .traefik.yml       # Plugin metadata
+```yaml
+# ✅ CORRECT - Using index function for headers with special characters
+Authorization: "[[ index .request.headers \"x-api-key\" ]]"
+
+# ✅ CORRECT - Simple header names
+SimpleHeader: "[[ .request.headers.simple ]]"
+
+# ❌ INCORRECT - Will cause parsing errors
+BadHeader: "[[ .request.headers.x-api-key ]]"
 ```
 
-### Building
+### Conditional Examples
 
-```bash
-# Build the plugin
-make build
+```yaml
+# Simple conditional
+Value: |
+  [[ if eq .request.method "POST" ]]
+    create
+  [[ else ]]
+    read
+  [[ end ]]
 
-# Run tests
-make test
+# Multiple conditions
+Status: |
+  [[ if eq .response.status 200 ]]
+    success
+  [[ else if eq .response.status 400 ]]
+    client_error
+  [[ else if eq .response.status 500 ]]
+    server_error
+  [[ else ]]
+    unknown
+  [[ end ]]
 
-# Start development environment
-docker-compose up
+# Header-based conditions
+Auth: |
+  [[ if eq (index .request.headers "x-api-key") "secret" ]]
+    authorized
+  [[ else ]]
+    unauthorized
+  [[ end ]]
 ```
 
-### Testing
+### Array Processing
 
-The plugin includes a test backend service for development and testing:
-
-```bash
-# Start the development environment
-docker compose up
-
-# Test query transformation
-curl "http://chat.localhost:8000/test?ask_id=123"
-
-# Test request/response modification
-curl -X POST http://chat.localhost:8000/test \
-  -H "Content-Type: application/json" \
-  -d '{"ask": "What is the weather?"}'
-
-# Access Traefik dashboard
-open http://traefik.localhost:8080
+```yaml
+# Processing arrays in response
+Results: |
+  [
+    [[ $items := .response.body.items ]]
+    [[ range $index, $item := $items ]]
+      [[ if $index ]], [[ end ]]
+      {
+        "id": "[[ $item.id ]]",
+        "value": "[[ $item.value ]]",
+        "index": [[ $index ]]
+      }
+    [[ end ]]
+  ]
 ```
 
 ## Error Handling
 
-The plugin includes comprehensive error handling:
+### Template Errors
+- Template parsing errors akan dicatat ke log
+- Invalid templates akan diabaikan
+- Processing akan tetap berlanjut meskipun ada template error
 
-- Template parsing errors are logged
-- JSON parsing failures fall back to raw string handling
-- Network errors are propagated appropriately
-- Configuration validation on startup
-
-## Performance Considerations
-
-- Templates are parsed once during initialization
-- JSON parsing/formatting is optimized for common use cases
-- Context is lightweight and created per request
-- Memory usage is minimized through efficient buffering
-
-## Security Considerations
-
-- Input validation on all template data
-- Safe template execution with controlled context
-- No arbitrary code execution capabilities
-- Header manipulation is controlled and logged
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Template Execution Errors**:
-   ```
-   Failed to execute query template: template: query:1:39: executing "query" at <.context.unixtime>: can't evaluate field unixtime in type interface {}
-   ```
-   - Ensure context types are properly defined
-   - Check template syntax and variable references
-
-2. **JSON Parsing Errors**:
-   - Verify input data is valid JSON
-   - Check template output produces valid JSON
-
-3. **Configuration Errors**:
-   - Validate YAML syntax in dynamic configuration
-   - Ensure all required fields are present
-
-### Debug Mode
-
-Enable debug logging by setting log level in Traefik configuration:
+### Missing Data
+- Missing variables akan menghasilkan `<no value>`
+- Gunakan conditional checks untuk memvalidasi data
 
 ```yaml
-log:
-  level: DEBUG
+# Safe access pattern
+SafeValue: |
+  [[ if .request.api.body.optional_field ]]
+    [[ .request.api.body.optional_field ]]
+  [[ else ]]
+    default_value
+  [[ end ]]
 ```
 
-## License
+## Best Practices
 
-This plugin is released under the MIT License. See LICENSE file for details.
+1. **Always validate data**: Gunakan conditionals untuk check keberadaan data
+2. **Use descriptive names**: Buat variable names yang jelas dan descriptive
+3. **Handle errors gracefully**: Selalu provide fallback values
+4. **Test thoroughly**: Test semua kondisi dan edge cases
+5. **Log operations**: Monitor logs untuk debug dan troubleshooting
 
-## Contributing
+## Debugging
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
+### Log Monitoring
+```bash
+# Monitor plugin logs
+docker-compose logs -f traefik | grep modifier
 
-## Support
+# Look for patterns like:
+# Set header Authorization: Bearer token (was: old-token)
+# Added header X-Request-ID: req_123456789
+# Modified request body: {...}
+# Modified response body: {...}
+```
 
-For issues and questions:
-- Check the troubleshooting section
-- Review Traefik plugin documentation
-- Submit issues on the project repository
+### Common Issues
+1. **Template parsing errors**: Check delimiter usage dan syntax
+2. **Missing values**: Validate data availability dengan conditionals
+3. **Header access**: Gunakan `index` function untuk special characters
+4. **JSON syntax**: Pastikan valid JSON dalam body modifications

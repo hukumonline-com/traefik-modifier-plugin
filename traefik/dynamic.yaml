@@ -16,6 +16,16 @@ http:
     chat-modifier:
       plugin:
         modifier:
+          ModifierHeader:
+          # if x-api-key=sk-didin then change to Authorization: Bearer 
+            Authorization : |
+              [[ if eq (index .request.headers "x-api-key") "sk-didin" ]]
+                Bearer sk-didin
+              [[ else if eq (index .request.headers "x-api-key") "sk-didin-test" ]]
+                Bearer sk-didin-test
+              [[ else ]]
+                Bearer sk-default
+              [[ end ]]
           ModifierQuery: 
             Transform:
               # Transform ask_id parameter to question_id with context timestamp

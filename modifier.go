@@ -18,6 +18,7 @@ type Config struct {
 	ModifierRequest  string         `json:"modifier_request,omitempty"`
 	ModifierResponse map[int]string `json:"modifier_response,omitempty"`
 	ModifierQuery    *QueryConfig   `json:"modifier_query,omitempty"`
+	ModifierHeader   HeaderConfig   `json:"modifier_header,omitempty"`
 }
 
 // TemplateContext holds context data for templates
@@ -30,11 +31,12 @@ func CreateConfig() *Config {
 
 // modifier holds the plugin instance
 type modifier struct {
-	name          string
-	next          http.Handler
-	bodyModifier  *BodyModifier
-	queryModifier *QueryModifier
-	context       *TemplateContext
+	name           string
+	next           http.Handler
+	bodyModifier   *BodyModifier
+	queryModifier  *QueryModifier
+	headerModifier *HeaderModifier
+	context        *TemplateContext
 }
 
 // New creates and returns a new modifier plugin instance
@@ -48,15 +50,22 @@ func New(ctx context.Context, next http.Handler, config *Config, name string) (h
 		queryModifier = NewQueryModifier(config.ModifierQuery.Transform)
 	}
 
+	// Initialize header modifier
+	var headerModifier *HeaderModifier
+	if len(config.ModifierHeader) > 0 {
+		headerModifier = NewHeaderModifier(config.ModifierHeader)
+	}
+
 	// Initialize template context
 	templateContext := &TemplateContext{}
 
 	plugin := &modifier{
-		name:          name,
-		next:          next,
-		bodyModifier:  bodyModifier,
-		queryModifier: queryModifier,
-		context:       templateContext,
+		name:           name,
+		next:           next,
+		bodyModifier:   bodyModifier,
+		queryModifier:  queryModifier,
+		headerModifier: headerModifier,
+		context:        templateContext,
 	}
 
 	return plugin, nil
@@ -69,6 +78,13 @@ func (m *modifier) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 	m.context = &TemplateContext{
 		"unixtime": time.Now().UnixNano(),
+	}
+
+	// Handle header modification
+	if m.headerModifier != nil {
+		if err := m.headerModifier.ModifyHeaders(req, m.context); err != nil {
+			log.Printf("Header modification error: %v", err)
+		}
 	}
 
 	// Handle query parameter modification
