@@ -4,11 +4,20 @@ const port = 3000;
 
 app.use(express.json());
 
-// Simple echo endpoint
+// Helper: log incoming request details (headers, body, query)
+function logRequest(label, req) {
+  console.log(`\n=== ${label} ===`);
+  console.log('Method      :', req.method);
+  console.log('Path        :', req.path);
+  console.log('Query       :', JSON.stringify(req.query, null, 2));
+  console.log('Headers     :', JSON.stringify(req.headers, null, 2));
+  console.log('Body        :', JSON.stringify(req.body, null, 2));
+}
+
+// /chat — existing endpoint
 app.post('/chat', (req, res) => {
-  console.log('Received query parameters:', JSON.stringify(req.query, null, 2));
-  console.log('Received body request:', JSON.stringify(req.body, null, 2));
-  
+  logRequest('/chat', req);
+
   const response = {
     id: Math.floor(Math.random() * 1000),
     answer: `You asked: "${req.body.question || req.body.message || 'nothing'}"`,
@@ -25,7 +34,30 @@ app.post('/chat', (req, res) => {
       { key1: 'valueA', key2: 'valueB' }
     ]
   };
-  
+
+  console.log('Sending response:', JSON.stringify(response, null, 2));
+  res.json(response);
+});
+
+// /v1/conversation — matches create-conversation-modifier route in dynamic.yaml
+// Validates: .request.headers, .request.method, .request.url, .request.path, .request.modified.body.*
+app.post('/v1/conversation', (req, res) => {
+  logRequest('/v1/conversation', req);
+
+  const response = {
+    id: `conv-${Math.floor(Math.random() * 9000 + 1000)}`,
+    answer: `Echo: "${req.body.message || req.body.question || 'nothing'}"`,
+    session_id: req.body.session_id || null,   // should be populated by ModifierRequest
+    meta_echo: req.body.meta || null,           // should contain method/url/path from plugin
+    timestamp: new Date().toISOString(),
+    // Mirror back key headers to verify they reached the backend
+    received_headers: {
+      authorization: req.headers['authorization'] || null,
+      'x-api-key':   req.headers['x-api-key']   || null,
+      'x-source':    req.headers['x-source']     || null
+    }
+  };
+
   console.log('Sending response:', JSON.stringify(response, null, 2));
   res.json(response);
 });
@@ -37,6 +69,7 @@ app.get('/health', (req, res) => {
 
 // Generic JSON endpoint
 app.post('/api/:endpoint', (req, res) => {
+  logRequest(`/api/${req.params.endpoint}`, req);
   res.json({
     endpoint: req.params.endpoint,
     method: req.method,

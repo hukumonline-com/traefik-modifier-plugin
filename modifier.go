@@ -122,7 +122,7 @@ func (m *modifier) handleResponseMasking(rw http.ResponseWriter, req *http.Reque
 	m.next.ServeHTTP(captureWriter, req)
 
 	// Use body modifier to handle response modification with context
-	if err := m.bodyModifier.ModifyResponseWithContext(rw, captureWriter, originalRequestBody, modifiedRequestBody, m.context); err != nil {
+	if err := m.bodyModifier.ModifyResponseWithContext(rw, captureWriter, req, originalRequestBody, modifiedRequestBody, m.context); err != nil {
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
