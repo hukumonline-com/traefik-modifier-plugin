@@ -9,7 +9,7 @@ services:
       - --configFile=/etc/traefik/traefik.yaml
     ports:
       - "8000:8000"     # HTTP entry point
-      - "8080:8080"     # Traefik dashboard
+      - "8888:8080"     # Traefik dashboard
     volumes:
       - ./traefik/traefik.yaml:/etc/traefik/traefik.yaml:ro
       - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro

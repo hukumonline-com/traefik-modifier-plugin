@@ -53,6 +53,10 @@ func (bm *BodyModifier) ModifyRequestBodyWithContext(req *http.Request, ctx *Tem
 	var buf bytes.Buffer
 	templateData := map[string]interface{}{
 		"request": map[string]interface{}{
+			"headers": convertHeaders(req.Header),
+			"method":  req.Method,
+			"url":     req.URL.String(),
+			"path":    req.URL.Path,
 			"api": map[string]interface{}{
 				"body": requestData,
 			},
@@ -115,11 +119,11 @@ func (rw *ResponseWriter) GetStatusCode() int {
 
 // ModifyResponse handles response body modification
 func (bm *BodyModifier) ModifyResponse(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody, modifiedRequestBody []byte) error {
-	return bm.ModifyResponseWithContext(originalWriter, capturedResponse, originalRequestBody, modifiedRequestBody, nil)
+	return bm.ModifyResponseWithContext(originalWriter, capturedResponse, nil, originalRequestBody, modifiedRequestBody, nil)
 }
 
 // ModifyResponseWithContext handles response body modification with context
-func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, originalRequestBody, modifiedRequestBody []byte, ctx *TemplateContext) error {
+func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWriter, capturedResponse *ResponseWriter, req *http.Request, originalRequestBody, modifiedRequestBody []byte, ctx *TemplateContext) error {
 	if len(bm.templateResponse) == 0 {
 		// No response masking configured, write original response
 		originalWriter.WriteHeader(capturedResponse.statusCode)
@@ -161,9 +165,23 @@ func (bm *BodyModifier) ModifyResponseWithContext(originalWriter http.ResponseWr
 	// Parse and execute response template
 	tmpl := template.Must(template.New("response").Funcs(pkg.SimpleFuncMap()).Delims("[[", "]]").Parse(templateStr))
 
+	// Build request metadata (req may be nil when called from legacy ModifyResponse)
+	reqHeaders := map[string]string{}
+	var reqMethod, reqURL, reqPath string
+	if req != nil {
+		reqHeaders = convertHeaders(req.Header)
+		reqMethod = req.Method
+		reqURL = req.URL.String()
+		reqPath = req.URL.Path
+	}
+
 	var buf bytes.Buffer
 	templateData := map[string]interface{}{
 		"request": map[string]interface{}{
+			"headers": reqHeaders,
+			"method":  reqMethod,
+			"url":     reqURL,
+			"path":    reqPath,
 			"api": map[string]interface{}{
 				"body": requestDataOriginal,
 			},

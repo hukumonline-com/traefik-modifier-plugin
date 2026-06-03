@@ -11,6 +11,15 @@ http:
         - chat-modifier
       service: chat-service
 
+    # Create-conversation router - demonstrates .request.headers / .request.method / .request.url / .request.path
+    create-conversation:
+      rule: "Host(`api.localhost`) && PathPrefix(`/v1/conversation`)"
+      entryPoints:
+        - web
+      middlewares:
+        - create-conversation-modifier
+      service: chat-service
+
   middlewares:
     # Chat service middleware - masks both request and response
     chat-modifier:
@@ -48,6 +57,45 @@ http:
                     [[ if $index ]], [[ end ]]{"[[ $element.key1 ]]" : "[[ $element.key2 ]]"}
                   [[ end ]]
                 ]
+              }
+
+    # Sample middleware: demonstrating .request.headers / .request.method / .request.url / .request.path
+    # Fix: previously caused "index of untyped nil" because request metadata was not populated.
+    create-conversation-modifier:
+      plugin:
+        modifier:
+          ModifierHeader:
+            # Set Authorization based on x-api-key header value
+            Authorization: |
+              [[ if eq (index .request.headers "x-api-key") "komdigi_secret" ]]
+                Bearer komdigi_token
+              [[ else if eq (index .request.headers "x-api-key") "tr_secret" ]]
+                Bearer tr_token
+              [[ else ]]
+                Bearer default_token
+              [[ end ]]
+          ModifierRequest: |
+            {
+              "session_id": "[[ if eq (index .request.headers "x-api-key") "komdigi_secret" ]]komdigi_[[ else if eq (index .request.headers "x-api-key") "tr_secret" ]]tr_[[ else ]]unknown_[[ end ]][[ .context.unixtime ]]",
+              "message": "[[ .request.api.body.message ]]",
+              "meta": {
+                "method": "[[ .request.method ]]",
+                "url":    "[[ .request.url ]]",
+                "path":   "[[ .request.path ]]",
+                "source": "[[ index .request.headers "x-source" ]]"
+              }
+            }
+          ModifierResponse:
+            "200": |
+              {
+                "conversation_id": "[[ .response.body.id ]]",
+                "session_id": "[[ .request.modified.body.session_id ]]",
+                "reply": "[[ .response.body.answer ]]",
+                "debug": {
+                  "requested_by": "[[ index .request.headers "x-api-key" ]]",
+                  "method":       "[[ .request.method ]]",
+                  "path":         "[[ .request.path ]]"
+                }
               }
 
   services:
